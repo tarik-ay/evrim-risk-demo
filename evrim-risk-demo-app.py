@@ -96,9 +96,194 @@ def generate_risk_checks(kalemler):
 
 
 # =============================================
-# EXCEL/CSV PARSER
+# EXCEL/CSV/XML PARSER
 # =============================================
+def parse_xml(uploaded_file):
+    """Parse Evrim beyanname XML file."""
+    import xml.etree.ElementTree as ET
+    try:
+        content = uploaded_file.read()
+        root = ET.fromstring(content)
+
+        # Namespace handling — Evrim uses tempuri.org namespace
+        ns = {"t": "http://tempuri.org/"}
+
+        def ft(el, tag):
+            """Find text in element, trying with and without namespace."""
+            if el is None:
+                return None
+            ns_uri = "http://tempuri.org/"
+            # Try with full namespace first (Evrim default)
+            child = el.find(f"{{{ns_uri}}}{tag}")
+            if child is not None and child.text:
+                return child.text.strip()
+            # Try without namespace
+            child = el.find(tag)
+            if child is not None and child.text:
+                return child.text.strip()
+            # Try recursive with namespace
+            child = el.find(f".//{{{ns_uri}}}{tag}")
+            if child is not None and child.text:
+                return child.text.strip()
+            # Try recursive without
+            child = el.find(f".//{tag}")
+            if child is not None and child.text:
+                return child.text.strip()
+            return None
+
+        def fnum(el, tag):
+            val = ft(el, tag)
+            if val:
+                try:
+                    return float(val.replace(",", ".").replace(" ", ""))
+                except (ValueError, TypeError):
+                    return 0
+            return 0
+
+        # Ülke kodları
+        ulke_map = {"005": "İtalya", "006": "Hollanda", "007": "Belçika", "009": "Yunanistan", "010": "Fransa", "011": "Almanya", "017": "İngiltere", "038": "Avusturya", "039": "İsviçre", "049": "ABD", "052": "Türkiye", "720": "Çin", "400": "Japonya", "412": "Güney Kore", "664": "Hindistan"}
+
+        # Header — BeyannameBilgi
+        ns_uri = "http://tempuri.org/"
+        bey = root.find(f".//{{{ns_uri}}}BeyannameBilgi")
+        if bey is None:
+            bey = root.find(".//BeyannameBilgi")
+        if bey is None:
+            for elem in root.iter():
+                tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                if tag == 'BeyannameBilgi':
+                    bey = elem
+                    break
+
+        ref_id = ft(root, "RefID") or ""
+        bey_no = ft(bey, "Beyanname_no") or ref_id
+        bey_tarih = ft(bey, "Beyanname_Tarihi") or "—"
+        rejim = ft(bey, "Rejim") or "—"
+        teslim = ft(bey, "Teslim_sekli") or "—"
+        teslim_yeri = ft(bey, "Teslim_yeri") or ""
+        tic_ulke_kod = ft(bey, "Ticaret_ulkesi") or ""
+        tic_ulke = ulke_map.get(tic_ulke_kod, tic_ulke_kod)
+        toplam_fatura = ft(bey, "Toplam_fatura") or "—"
+        fatura_doviz = ft(bey, "Toplam_fatura_dovizi") or ""
+        navlun = ft(bey, "Toplam_navlun") or "0"
+        navlun_doviz = ft(bey, "Toplan_navlun_dovizi") or ft(bey, "Toplam_navlun_dovizi") or ""
+        sigorta = ft(bey, "Toplam_sigorta") or "0"
+        odeme = ft(bey, "Odeme") or "—"
+        tasima = ft(bey, "Sinirdaki_tasima_sekli") or ft(bey, "Cikistaki_aracin_tipi") or "—"
+
+        # Rejim açıklama
+        rejim_map = {"4000": "Serbest Dolaşıma Giriş", "4071": "Antrepo → Serbest Dolaşım", "4051": "Dahilde İşleme → Serbest Dolaşım", "1000": "Kesin İhracat", "2300": "Geçici İthalat", "7100": "Antrepo"}
+        rejim_adi = rejim_map.get(rejim, "")
+
+        incoterms_str = f"{teslim} {teslim_yeri}".strip()
+
+        beyanname = {
+            "dosya_no": bey_no or uploaded_file.name,
+            "kur_tarihi": bey_tarih,
+            "rejim": f"{rejim} — {rejim_adi}" if rejim_adi else rejim,
+            "anlasma": f"Ticaret ülkesi: {tic_ulke} ({tic_ulke_kod})",
+            "tasima": tasima,
+            "incoterms": incoterms_str,
+            "doviz_kuru": f"Fatura: {toplam_fatura} {fatura_doviz} | Ödeme: {odeme}",
+        }
+
+        # Kalemler
+        kalem_elements = root.findall(f".//{{{ns_uri}}}kalem")
+        if not kalem_elements:
+            kalem_elements = root.findall(".//kalem")
+        if not kalem_elements:
+            kalem_elements = root.findall(".//Kalem")
+        if not kalem_elements:
+            for elem in root.iter():
+                tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                if tag == 'kalem':
+                    kalem_elements.append(elem)
+
+        kalemler = []
+        for kel in kalem_elements:
+            gtip_raw = ft(kel, "Gtip") or ""
+            if not gtip_raw or len(gtip_raw) < 4:
+                continue
+
+            # Format GTİP: 392690979029 → 3926.90.97.90.29
+            g = gtip_raw.ljust(12, "0")
+            gtip_fmt = f"{g[0:4]}.{g[4:6]}.{g[6:8]}.{g[8:10]}.{g[10:12]}"
+
+            kalem_no = ft(kel, "Kalem_sira_no") or str(len(kalemler) + 1)
+            mense_kod = ft(kel, "Mensei_ulke") or ""
+            mense_ad = ulke_map.get(mense_kod, mense_kod)
+
+            ticari = ft(kel, "Ticari_tanimi") or ""
+            tarifedeki = ft(kel, "Tarifedeki_tanimi") or ""
+            tanim = tarifedeki if tarifedeki else ticari
+
+            miktar = fnum(kel, "Miktar") or fnum(kel, "Istatistiki_miktar") or 1
+            birim = ft(kel, "Miktar_birimi") or ft(kel, "Tamamlayici_olcu_birimi") or "Adet"
+            # Birim kod → isim
+            birim_map = {"C62": "Adet", "KGM": "Kg", "MTR": "Metre", "LTR": "Litre", "MTK": "m²", "MTQ": "m³"}
+            birim = birim_map.get(birim, birim)
+
+            fatura_mik = fnum(kel, "Fatura_miktari")
+            fatura_doviz_k = ft(kel, "Fatura_miktarinin_dovizi") or ""
+            ist_kiymet = fnum(kel, "Istatistiki_kiymet")
+            brut = fnum(kel, "Brut_agirlik")
+            net = fnum(kel, "Net_agirlik")
+            navlun_k = fnum(kel, "Navlun_miktari")
+            sigorta_k = fnum(kel, "Sigorta_miktari")
+            kdv = ft(kel, "Kdv_orani") or ""
+            aciklama = ft(kel, "Aciklama_44") or ""
+            marka = ft(kel, "Marka") or ""
+
+            # Uyarılar
+            uyarilar = []
+            if aciklama:
+                uyarilar.append(aciklama[:120] + ("..." if len(aciklama) > 120 else ""))
+            if kdv:
+                uyarilar.append(f"KDV oranı: {kdv}")
+
+            # KKDF check
+            kkdf = fnum(kel, "Yurtici_Kkdf")
+
+            vergiler = []
+            if fatura_mik > 0:
+                vergiler.append({"turu": f"Fatura tutarı ({fatura_doviz_k})", "matrah": fatura_mik, "oran": 0, "tutar": fatura_mik})
+            if navlun_k > 0:
+                navlun_d = ft(kel, "Navlun_miktarinin_dovizi") or "TRY"
+                vergiler.append({"turu": f"Navlun ({navlun_d})", "matrah": navlun_k, "oran": 0, "tutar": navlun_k})
+            if sigorta_k > 0:
+                sig_d = ft(kel, "Sigorta_miktarinin_dovizi") or "TRY"
+                vergiler.append({"turu": f"Sigorta ({sig_d})", "matrah": sigorta_k, "oran": 0, "tutar": sigorta_k})
+            if kkdf > 0:
+                vergiler.append({"turu": "KF — KKDF", "matrah": 0, "oran": 0, "tutar": kkdf})
+
+            kalemler.append({
+                "sno": int(kalem_no) if kalem_no.isdigit() else len(kalemler) + 1,
+                "gtip": gtip_fmt,
+                "tanim": tanim or "—",
+                "ticari_tanim": ticari,
+                "mense": f"{mense_ad} ({mense_kod})",
+                "miktar": miktar,
+                "birim": birim,
+                "kalem_fiyati": fatura_mik,
+                "ist_kiymet": ist_kiymet,
+                "brut_kg": brut,
+                "net_kg": net,
+                "vergiler": vergiler,
+                "uyarilar": uyarilar,
+            })
+
+        return beyanname, kalemler
+
+    except Exception as e:
+        st.error(f"XML okunurken hata: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None, None
+
+
 def parse_upload(uploaded_file):
+    if uploaded_file.name.endswith(".xml"):
+        return parse_xml(uploaded_file)
     import pandas as pd
     try:
         if uploaded_file.name.endswith(".csv"):
@@ -308,9 +493,9 @@ if source == "📦 Demo verisi":
 else:
     beyanname, kalemler, checks, is_demo = None, None, None, False
     st.markdown("---")
-    st.caption("GTİP, tanım, menşe, miktar, fiyat, ağırlık sütunları içeren Excel veya CSV yükleyin")
+    st.caption("Excel (.xlsx), CSV veya XML dosyası yükleyin")
 
-    uploaded = st.file_uploader("Dosya seçin", type=["xlsx", "xls", "csv"])
+    uploaded = st.file_uploader("Dosya seçin", type=["xlsx", "xls", "csv", "xml"])
     if uploaded:
         beyanname, kalemler = parse_upload(uploaded)
         if kalemler and len(kalemler) > 0:
