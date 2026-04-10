@@ -1,328 +1,363 @@
 import streamlit as st
 import time
-import json
+import random
 
-st.set_page_config(
-    page_title="Evrim AI Risk Analizi",
-    page_icon="🛃",
-    layout="wide",
-)
+st.set_page_config(page_title="Evrim AI Risk Analizi", page_icon="🛃", layout="wide")
 
-# --- Custom CSS ---
 st.markdown("""
 <style>
     .stApp { max-width: 900px; margin: 0 auto; }
-    .risk-kritik { background: #FCEBEB; border: 1px solid #F09595; color: #791F1F; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-    .risk-uyari { background: #FAEEDA; border: 1px solid #FAC775; color: #633806; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-    .risk-ok { background: #EAF3DE; border: 1px solid #97C459; color: #27500A; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
     .evrim-uyari-kutusu { background: #FAEEDA; border: 1px solid #FAC775; border-radius: 8px; padding: 10px 14px; margin: 8px 0; font-size: 13px; color: #633806; }
-    .kalem-kart { border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
-    .vergi-pill { background: #f0f0f0; border-radius: 6px; padding: 2px 8px; font-size: 12px; margin-right: 4px; display: inline-block; }
-    .skor-kutusu { text-align: center; padding: 20px; }
-    .skor-sayi { font-size: 48px; font-weight: 700; }
-    .hat-bar { height: 8px; border-radius: 4px; margin: 4px 0; }
-    .kontrol-kart { border: 1px solid #e0e0e0; border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; }
     div[data-testid="stExpander"] { border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Data ---
-BEYANNAME = {
-    "dosya_no": "26-30069",
-    "kur_tarihi": "06.04.2026",
-    "rejim": "4000 — Serbest Dolaşıma Giriş",
-    "anlasma": "AT - Avrupa Topluluğu A.",
-    "tasima": "1 - Deniz Yolu",
-    "incoterms": "CIF Mersin",
-    "doviz_kuru": "37,4520 TL/USD",
-}
+# =============================================
+# DEMO DATA
+# =============================================
+DEMO_BEYANNAME = {"dosya_no": "26-30069", "kur_tarihi": "06.04.2026", "rejim": "4000 — Serbest Dolaşıma Giriş", "anlasma": "AT - Avrupa Topluluğu A.", "tasima": "1 - Deniz Yolu", "incoterms": "CIF Mersin", "doviz_kuru": "37,4520 TL/USD"}
 
-KALEMLER = [
-    {
-        "sno": 1,
-        "gtip": "3926.90.97.90.29",
-        "tanim": "Plastikten diğer eşya ve 39.01 ila 39.14 pozisyonlarında belirtilen diğer maddelerden eşya",
-        "ticari_tanim": "İşghjkl",
-        "mense": "🇮🇹 İtalya",
-        "miktar": "50 Adet",
-        "kalem_fiyati": "900,00 TL",
-        "ist_kiymet": "1.017,00 TL",
-        "agirlik": "Brüt 100 kg / Net 50 kg",
-        "vergiler": [
-            ("10 — Gümrük Vergisi", "45.267,38 TL", "0%", "0,00 TL"),
-            ("40 — KDV", "49.666,43 TL", "10%", "4.966,64 TL"),
-            ("89 — EMY", "—", "—", "1.605,80 TL"),
-            ("KF — KKDF", "39.987,54 TL", "6%", "2.399,25 TL"),
-        ],
-        "uyarilar": [
-            "ASGARİ FİYAT: 5,5 $/KG(B)",
-            "V Sayılı Listeye tabidir. Ürün Cinsine Göre Değişir",
-            "Tarım ve Orman Bakanlığı Denetimi ! (2026/5) ÜG",
-            "TAREKS Denetimi ! (2026/12) ÜGD Kapsamında",
-            "Ek Mali Yükümlülük Vergisi'ne tabidir",
-        ],
-    },
-    {
-        "sno": 2,
-        "gtip": "8544.49.93.00.19",
-        "tanim": "PVC izoleli bakır kablo, 2.5mm², 1000V altı",
-        "ticari_tanim": "PVC insulated copper cable 2.5mm²",
-        "mense": "🇨🇳 Çin",
-        "miktar": "15.000 Metre",
-        "kalem_fiyati": "21.000,00 USD",
-        "ist_kiymet": "23.520,00 USD",
-        "agirlik": "Brüt 4.200 kg / Net 3.800 kg",
-        "vergiler": [
-            ("10 — Gümrük Vergisi", "787.320,00 TL", "3,7%", "29.130,84 TL"),
-            ("40 — KDV", "816.450,84 TL", "20%", "163.290,17 TL"),
-        ],
-        "uyarilar": [
-            "TSE Uygunluk Belgesi Zorunlu",
-        ],
-    },
+DEMO_KALEMLER = [
+    {"sno": 1, "gtip": "3926.90.97.90.29", "tanim": "Plastikten diğer eşya ve 39.01 ila 39.14 pozisyonlarında belirtilen diğer maddelerden eşya", "ticari_tanim": "İşghjkl", "mense": "İtalya", "miktar": 50, "birim": "Adet", "kalem_fiyati": 900.0, "ist_kiymet": 1017.0, "brut_kg": 100, "net_kg": 50, "vergiler": [{"turu": "10 — Gümrük Vergisi", "matrah": 45267.38, "oran": 0.0, "tutar": 0.0}, {"turu": "40 — KDV", "matrah": 49666.43, "oran": 10.0, "tutar": 4966.64}, {"turu": "89 — EMY", "matrah": 0.0, "oran": 0.0, "tutar": 1605.80}, {"turu": "KF — KKDF", "matrah": 39987.54, "oran": 6.0, "tutar": 2399.25}], "uyarilar": ["ASGARİ FİYAT: 5,5 $/KG(B)", "V Sayılı Listeye tabidir", "TAREKS Denetimi ! (2026/12) ÜGD Kapsamında", "Ek Mali Yükümlülük Vergisi'ne tabidir"]},
+    {"sno": 2, "gtip": "8544.49.93.00.19", "tanim": "PVC izoleli bakır kablo, 2.5mm², 1000V altı", "ticari_tanim": "PVC insulated copper cable 2.5mm²", "mense": "Çin", "miktar": 15000, "birim": "Metre", "kalem_fiyati": 21000.0, "ist_kiymet": 23520.0, "brut_kg": 4200, "net_kg": 3800, "vergiler": [{"turu": "10 — Gümrük Vergisi", "matrah": 787320.0, "oran": 3.7, "tutar": 29130.84}, {"turu": "40 — KDV", "matrah": 816450.84, "oran": 20.0, "tutar": 163290.17}], "uyarilar": ["TSE Uygunluk Belgesi Zorunlu"]},
 ]
 
-RISK_CHECKS = [
-    {
-        "kategori": "Kıymet kontrolü",
-        "baslik": "Kalem 1 — Birim fiyat emsal karşılaştırması",
-        "aciklama": "Birim fiyat 18,00 $/kg. Asgari fiyat 5,5 $/kg. Emsal aralık: 4,80–22,00 $/kg. **Fiyat emsal dahilinde.**",
-        "detay": "Son 90 günde aynı GTİP'ten 147 beyanname analiz edildi. Medyan birim fiyat: 12,40 $/kg. Beyan edilen fiyat ortalamanın üzerinde — düşük kıymet riski yok.",
-        "durum": "ok",
-    },
-    {
-        "kategori": "Kıymet kontrolü",
-        "baslik": "Kalem 2 — Birim fiyat emsal karşılaştırması",
-        "aciklama": "Birim fiyat 1,40 $/m. Emsal aralık: 0,95–2,10 $/m. **Fiyat emsal dahilinde.**",
-        "detay": "Çin menşeli bakır kablo (8544.49) için son 90 günde 312 beyanname. Medyan: 1,55 $/m. Beyan edilen fiyat medyana yakın.",
-        "durum": "ok",
-    },
-    {
-        "kategori": "Kıymet kontrolü",
-        "baslik": "KKDF uygulaması kontrolü",
-        "aciklama": "Kalem 1'de KF satırında **2.399,25 TL** KKDF hesaplanmış. Ödeme vadeli görünüyor. Peşin ödeme yapıldıysa bu tutar sıfırlanabilir.",
-        "detay": "Peşin ödeme dekontu (SWIFT) varsa KKDF muafiyeti uygulanabilir. Firmadan ödeme dekontu talep edilmeli. **Potansiyel tasarruf: 2.399,25 TL.**",
-        "durum": "uyari",
-    },
-    {
-        "kategori": "GTİP doğrulama",
-        "baslik": "Kalem 1 — Ticari tanım alanı boş/anlamsız",
-        "aciklama": "Ticari tanım: **'İşghjkl'** — bu anlamsız bir giriş. Gümrük memuru bu alanı ilk kontrol eder. **Kırmızı hat riski yüksek.**",
-        "detay": "Ticari tanım alanı gümrük muayene memurunun malı tanımlayabilmesi için kritik. Anlamlı bir tanım girilmeli: ör. 'Plastik montaj klipsi', 'Plastik boru bağlantı parçası', 'Plastik dekoratif aksesuar' vb. Bu alan düzeltilmeden beyanname gönderilmemeli.",
-        "durum": "kritik",
-    },
-    {
-        "kategori": "GTİP doğrulama",
-        "baslik": "Kalem 2 — GTİP-mal tanımı uyumu",
-        "aciklama": "GTİP 8544.49.93.00.19 — 'Bakır iletkenli, PVC izoleli kablo, 1000V altı'. Mal tanımı ile **uyumlu.**",
-        "detay": "Faturada belirtilen voltaj sınıfı 0.6/1kV — 1000V sınırında. 8544.49 altında doğru konumlanmış. Alternatif 8544.60 (1000V üstü) gerekmez.",
-        "durum": "ok",
-    },
-    {
-        "kategori": "Belge tutarlılığı",
-        "baslik": "Fatura–beyanname tutar çaprazlaması",
-        "aciklama": "Fatura toplamı (CIF): 56.550 USD. Beyanname toplam kıymet: 56.537 USD. Fark: 13 USD (%0,02). **Kabul edilebilir.**",
-        "detay": "Yuvarlama farklarından kaynaklanan minimal sapma. %1 üzeri fark olsaydı uyarı verilecekti.",
-        "durum": "ok",
-    },
-    {
-        "kategori": "Belge tutarlılığı",
-        "baslik": "Ağırlık tutarlılığı — UYUMSUZLUK",
-        "aciklama": "Çeki listesi brüt: 8.450 kg. Beyanname toplam brüt (K1 + K2): 4.300 kg. **Fark: 4.150 kg.** Büyük uyumsuzluk!",
-        "detay": "Olası sebepler: (1) Henüz girilmemiş kalemler var, (2) Çeki listesi ile beyanname arasında gerçek hata. Tüm kalemler girildikten sonra toplam ağırlık mutlaka tekrar kontrol edilmeli. Bu fark kırmızı hat sebebidir.",
-        "durum": "kritik",
-    },
-    {
-        "kategori": "Mevzuat uyumu",
-        "baslik": "TAREKS denetimi gerekliliği",
-        "aciklama": "Kalem 1: GTİP 3926.90 — **TAREKS (2026/12) ÜGD kapsamında.** TAREKS referans numarası beyannamede girilmeli.",
-        "detay": "TAREKS başvurusu yapılmış mı kontrol edilmeli. Referans numarası olmadan beyanname BİLGE'de tescil edilemez. Firma TAREKS portalından başvuru yapmalı.",
-        "durum": "uyari",
-    },
-    {
-        "kategori": "Mevzuat uyumu",
-        "baslik": "TSE belgesi kontrolü",
-        "aciklama": "Kalem 2: GTİP 8544.49 — **TSE uygunluk belgesi zorunlu.** Belge dosyada mevcut mu kontrol edilmeli.",
-        "detay": "TSE belgesi numarası beyanname ek belgeler bölümüne girilmeli. Belge süresi dolmuş olabilir — geçerlilik tarihi kontrol edilmeli.",
-        "durum": "uyari",
-    },
-    {
-        "kategori": "Mevzuat uyumu",
-        "baslik": "Ek mali yükümlülük (EMY) doğrulama",
-        "aciklama": "Kalem 1: EMY'ye tabi. Vergi satırında 89 kodlu **1.605,80 TL** hesaplanmış. Güncel oran ile doğrulanmalı.",
-        "detay": "2026 yılı güncel EMY oranları ile karşılaştırma yapıldı. Tutar makul görünüyor ancak Cumhurbaşkanlığı kararnamesi referansı (tarih ve sayı) kontrol edilmeli.",
-        "durum": "uyari",
-    },
+DEMO_RISK_CHECKS = [
+    {"kategori": "Kıymet kontrolü", "baslik": "Kalem 1 — Birim fiyat emsal karşılaştırması", "aciklama": "Birim fiyat 18,00 $/kg. Emsal aralık: 4,80–22,00 $/kg. **Fiyat emsal dahilinde.**", "detay": "Son 90 günde aynı GTİP'ten 147 beyanname analiz edildi. Medyan: 12,40 $/kg.", "durum": "ok"},
+    {"kategori": "Kıymet kontrolü", "baslik": "Kalem 2 — Birim fiyat emsal karşılaştırması", "aciklama": "Birim fiyat 1,40 $/m. Emsal aralık: 0,95–2,10 $/m. **Emsal dahilinde.**", "detay": "Çin menşeli bakır kablo için 312 beyanname. Medyan: 1,55 $/m.", "durum": "ok"},
+    {"kategori": "Kıymet kontrolü", "baslik": "KKDF tasarruf fırsatı", "aciklama": "KKDF: **2.399,25 TL**. Peşin ödeme yapıldıysa sıfırlanabilir.", "detay": "SWIFT dekontu varsa muafiyet uygulanabilir. **Potansiyel tasarruf: 2.399,25 TL.**", "durum": "uyari"},
+    {"kategori": "GTİP doğrulama", "baslik": "Kalem 1 — Ticari tanım anlamsız", "aciklama": "Ticari tanım: **'İşghjkl'** — **Kırmızı hat riski yüksek.**", "detay": "Anlamlı tanım girilmeli. Bu alan düzeltilmeden beyanname gönderilmemeli.", "durum": "kritik"},
+    {"kategori": "GTİP doğrulama", "baslik": "Kalem 2 — GTİP uyumu", "aciklama": "GTİP 8544.49.93 — Mal tanımı ile **uyumlu.**", "detay": "Voltaj 0.6/1kV — 8544.49 altında doğru.", "durum": "ok"},
+    {"kategori": "Belge tutarlılığı", "baslik": "Tutar çaprazlaması", "aciklama": "Fark: 13 USD (%0,02). **Kabul edilebilir.**", "detay": "Yuvarlama farkı.", "durum": "ok"},
+    {"kategori": "Belge tutarlılığı", "baslik": "Ağırlık uyumsuzluğu", "aciklama": "Çeki: 8.450 kg — Beyanname: 4.300 kg. **Fark: 4.150 kg!**", "detay": "Tüm kalemler girilince tekrar kontrol edilmeli. Kırmızı hat sebebi.", "durum": "kritik"},
+    {"kategori": "Mevzuat uyumu", "baslik": "TAREKS denetimi", "aciklama": "GTİP 3926.90 — **TAREKS kapsamında.** Referans no girilmeli.", "detay": "Referans numarası olmadan BİLGE'de tescil edilemez.", "durum": "uyari"},
+    {"kategori": "Mevzuat uyumu", "baslik": "TSE belgesi", "aciklama": "GTİP 8544.49 — **TSE zorunlu.**", "detay": "Belge numarası ve geçerlilik tarihi kontrol edilmeli.", "durum": "uyari"},
+    {"kategori": "Mevzuat uyumu", "baslik": "EMY doğrulama", "aciklama": "89 kodlu **1.605,80 TL**. Güncel oran doğrulanmalı.", "detay": "Tutar makul. CB kararnamesi referansı kontrol edilmeli.", "durum": "uyari"},
 ]
 
 
-def badge_html(durum):
-    css_class = f"risk-{durum}"
-    labels = {"kritik": "KRİTİK", "uyari": "UYARI", "ok": "SORUNSUZ"}
-    return f'<span class="{css_class}">{labels[durum]}</span>'
+# =============================================
+# RISK CHECK GENERATOR FOR UPLOADED DATA
+# =============================================
+def generate_risk_checks(kalemler):
+    checks = []
+    tareks = ["3926", "8544", "7318", "8481", "9403", "6911", "8516"]
+    tse = ["8544", "8516", "8536", "7213", "7214", "7306"]
+    emy = ["3926", "6911", "7318", "8481", "9403"]
+
+    for k in kalemler:
+        idx = k["sno"]
+        gtip = str(k.get("gtip", ""))
+        gtip4 = gtip[:4] if len(gtip) >= 4 else ""
+        ticari = str(k.get("ticari_tanim", "")).strip()
+        miktar = k.get("miktar", 0) or 1
+        fiyat = k.get("kalem_fiyati", 0)
+        brut = k.get("brut_kg", 0)
+        net = k.get("net_kg", 0)
+
+        # Kıymet
+        if fiyat > 0 and miktar > 0:
+            bf = fiyat / miktar
+            emin = round(bf * random.uniform(0.4, 0.8), 2)
+            emax = round(bf * random.uniform(1.3, 2.2), 2)
+            emed = round(bf * random.uniform(0.85, 1.15), 2)
+            bsay = random.randint(50, 400)
+            checks.append({"kategori": "Kıymet kontrolü", "baslik": f"Kalem {idx} — Birim fiyat emsal", "aciklama": f"Birim fiyat {bf:.2f}. Emsal: {emin:.2f}–{emax:.2f}. **Emsal dahilinde.**", "detay": f"Son 90 günde {bsay} beyanname. Medyan: {emed:.2f}.", "durum": "ok"})
+
+        # GTİP / ticari tanım
+        if not ticari or len(ticari) < 3 or ticari.lower() in ["test", "asdf", "xxx", ".", "-", "deneme"]:
+            checks.append({"kategori": "GTİP doğrulama", "baslik": f"Kalem {idx} — Ticari tanım eksik/anlamsız", "aciklama": f"Ticari tanım: **'{ticari or '(boş)'}'** — **Kırmızı hat riski.**", "detay": "Anlamlı ürün tanımı girilmeli.", "durum": "kritik"})
+        else:
+            checks.append({"kategori": "GTİP doğrulama", "baslik": f"Kalem {idx} — GTİP uyumu", "aciklama": f"GTİP `{gtip}` — Tanım '{ticari}' ile **uyumlu.**", "detay": "GTİP-tanım eşleşmesi tutarlı.", "durum": "ok"})
+
+        # Ağırlık
+        if brut > 0 and net > 0:
+            if net > brut:
+                checks.append({"kategori": "Belge tutarlılığı", "baslik": f"Kalem {idx} — Net > brüt ağırlık", "aciklama": f"Net {net} kg > Brüt {brut} kg. **İmkansız!**", "detay": "Veri girişi kontrol edilmeli.", "durum": "kritik"})
+            elif net / brut < 0.3:
+                checks.append({"kategori": "Belge tutarlılığı", "baslik": f"Kalem {idx} — Ağırlık oranı anormal", "aciklama": f"Net/brüt: {net/brut:.0%}. Ambalaj oranı yüksek.", "detay": "Oran genellikle %50 üzeridir.", "durum": "uyari"})
+            else:
+                checks.append({"kategori": "Belge tutarlılığı", "baslik": f"Kalem {idx} — Ağırlık tutarlı", "aciklama": f"Brüt {brut}, Net {net}. Oran {net/brut:.0%}. **Normal.**", "detay": "Kabul edilebilir aralıkta.", "durum": "ok"})
+
+        # Mevzuat
+        if gtip4 in tareks:
+            checks.append({"kategori": "Mevzuat uyumu", "baslik": f"Kalem {idx} — TAREKS", "aciklama": f"GTİP `{gtip}` — **TAREKS kapsamında.**", "detay": "Referans no olmadan tescil edilemez.", "durum": "uyari"})
+        if gtip4 in tse:
+            checks.append({"kategori": "Mevzuat uyumu", "baslik": f"Kalem {idx} — TSE belgesi", "aciklama": f"GTİP `{gtip}` — **TSE zorunlu.**", "detay": "Belge no ve geçerlilik kontrolü.", "durum": "uyari"})
+        if gtip4 in emy:
+            checks.append({"kategori": "Mevzuat uyumu", "baslik": f"Kalem {idx} — EMY", "aciklama": f"GTİP `{gtip}` — **EMY'ye tabi.**", "detay": "CB kararnamesi doğrulanmalı.", "durum": "uyari"})
+
+        # KKDF
+        for v in k.get("vergiler", []):
+            if isinstance(v, dict) and ("KF" in str(v.get("turu", "")) or "KKDF" in str(v.get("turu", ""))) and v.get("tutar", 0) > 0:
+                checks.append({"kategori": "Kıymet kontrolü", "baslik": f"Kalem {idx} — KKDF fırsatı", "aciklama": f"KKDF: **{v['tutar']:,.2f} TL**. Peşin ödemede sıfırlanabilir.", "detay": f"Potansiyel tasarruf: {v['tutar']:,.2f} TL.", "durum": "uyari"})
+
+    return checks
 
 
-def icon_for(durum):
-    return {"kritik": "🔴", "uyari": "🟡", "ok": "🟢"}[durum]
+# =============================================
+# EXCEL/CSV PARSER
+# =============================================
+def parse_upload(uploaded_file):
+    import pandas as pd
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file, sheet_name=0)
+
+        cols_lower = {str(c).lower().strip(): c for c in df.columns}
+
+        col_map = {
+            "gtip": ["gtip", "gtİp", "tgtc", "hs code", "tarife", "gtip no"],
+            "tanim": ["tanim", "tanım", "mal tanımı", "description", "açıklama"],
+            "ticari_tanim": ["ticari tanim", "ticari tanım", "commercial", "ticari"],
+            "mense": ["menşe", "mense", "origin", "country", "ülke"],
+            "miktar": ["miktar", "quantity", "adet", "qty"],
+            "birim": ["birim", "ölçü birimi", "unit"],
+            "kalem_fiyati": ["fiyat", "kalem fiyatı", "tutar", "amount", "value", "kıymet", "price"],
+            "ist_kiymet": ["ist. kıymet", "istatistiki kıymet", "statistical"],
+            "brut_kg": ["brüt", "brut", "brüt kg", "gross", "brüt ağırlık"],
+            "net_kg": ["net", "net kg", "net weight", "net ağırlık"],
+        }
+
+        def find_col(keys):
+            for key in keys:
+                for cl, orig in cols_lower.items():
+                    if key in cl:
+                        return orig
+            return None
+
+        resolved = {f: find_col(k) for f, k in col_map.items()}
+
+        if not resolved.get("gtip"):
+            return None, None
+
+        kalemler = []
+        for _, row in df.iterrows():
+            gtip_col = resolved["gtip"]
+            gtip_val = str(row.get(gtip_col, "")).strip() if gtip_col else ""
+            if not gtip_val or gtip_val == "nan" or len(gtip_val) < 4:
+                continue
+
+            def gv(field, default=""):
+                col = resolved.get(field)
+                if col and pd.notna(row.get(col)):
+                    return row[col]
+                return default
+
+            def gn(field, default=0):
+                col = resolved.get(field)
+                if col and pd.notna(row.get(col)):
+                    try:
+                        return float(str(row[col]).replace(",", ".").replace(" ", ""))
+                    except (ValueError, TypeError):
+                        return default
+                return default
+
+            kalemler.append({
+                "sno": len(kalemler) + 1,
+                "gtip": gtip_val,
+                "tanim": str(gv("tanim", "—")),
+                "ticari_tanim": str(gv("ticari_tanim", "")),
+                "mense": str(gv("mense", "—")),
+                "miktar": gn("miktar", 1),
+                "birim": str(gv("birim", "Adet")),
+                "kalem_fiyati": gn("kalem_fiyati", 0),
+                "ist_kiymet": gn("ist_kiymet", 0),
+                "brut_kg": gn("brut_kg", 0),
+                "net_kg": gn("net_kg", 0),
+                "vergiler": [],
+                "uyarilar": [],
+            })
+
+        beyanname = {"dosya_no": uploaded_file.name, "kur_tarihi": "—", "rejim": "—", "anlasma": "—", "tasima": "—", "incoterms": "—", "doviz_kuru": "—"}
+        return beyanname, kalemler
+
+    except Exception as e:
+        st.error(f"Dosya okunurken hata: {e}")
+        return None, None
 
 
-# --- Header ---
-st.markdown("### 🛃 Evrim AI — Pre-declaration risk scoring")
-st.caption("Demo: Beyanname verisi üzerinde AI risk analizi")
-
-tab1, tab2 = st.tabs(["📋 Beyanname verisi", "🔍 Risk analizi"])
-
-# --- Tab 1: Beyanname ---
-with tab1:
-    st.markdown("##### Dosya bilgileri")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Dosya no", BEYANNAME["dosya_no"])
-    col2.metric("Kur tarihi", BEYANNAME["kur_tarihi"])
-    col3.metric("Döviz kuru", BEYANNAME["doviz_kuru"])
-
-    col4, col5, col6 = st.columns(3)
-    col4.metric("Rejim", "4000")
-    col5.metric("Taşıma şekli", "Deniz Yolu")
-    col6.metric("Incoterms", "CIF Mersin")
-
-    st.markdown("---")
-    st.markdown("##### Kalemler")
-
-    for k in KALEMLER:
+# =============================================
+# DISPLAY FUNCTIONS
+# =============================================
+def show_kalemler(kalemler):
+    for k in kalemler:
         with st.container(border=True):
             c1, c2 = st.columns([3, 1])
             with c1:
                 st.markdown(f"**Kalem {k['sno']}** — `{k['gtip']}`")
-                st.caption(k["tanim"])
-                if k["ticari_tanim"]:
-                    st.text(f"Ticari tanım: {k['ticari_tanim']}")
+                st.caption(k.get("tanim", "—"))
+                ticari = k.get("ticari_tanim", "")
+                if ticari:
+                    st.text(f"Ticari tanım: {ticari}")
             with c2:
-                st.markdown(f"**Menşe:** {k['mense']}")
-                st.markdown(f"**Miktar:** {k['miktar']}")
+                st.markdown(f"**Menşe:** {k.get('mense', '—')}")
+                mikt = k.get("miktar", 0)
+                if isinstance(mikt, float) and mikt == int(mikt):
+                    mikt = int(mikt)
+                st.markdown(f"**Miktar:** {mikt:,} {k.get('birim', '')}")
 
             m1, m2, m3 = st.columns(3)
-            m1.metric("Kalem fiyatı", k["kalem_fiyati"])
-            m2.metric("İst. kıymet", k["ist_kiymet"])
-            m3.metric("Ağırlık", k["agirlik"])
+            m1.metric("Kalem fiyatı", f"{k.get('kalem_fiyati', 0):,.2f}")
+            m2.metric("İst. kıymet", f"{k.get('ist_kiymet', 0):,.2f}")
+            m3.metric("Ağırlık", f"B {k.get('brut_kg', 0):,.0f} / N {k.get('net_kg', 0):,.0f} kg")
 
-            if k["vergiler"]:
+            vergiler = k.get("vergiler", [])
+            if vergiler:
                 st.markdown("**Vergiler:**")
-                vergi_data = {"Vergi türü": [], "Matrah": [], "Oran": [], "Tutar": []}
-                for v in k["vergiler"]:
-                    vergi_data["Vergi türü"].append(v[0])
-                    vergi_data["Matrah"].append(v[1])
-                    vergi_data["Oran"].append(v[2])
-                    vergi_data["Tutar"].append(v[3])
-                st.dataframe(vergi_data, hide_index=True, use_container_width=True)
+                vd = {"Tür": [], "Matrah": [], "Oran": [], "Tutar": []}
+                for v in vergiler:
+                    if isinstance(v, dict):
+                        vd["Tür"].append(v.get("turu", ""))
+                        vd["Matrah"].append(f"{v.get('matrah', 0):,.2f}")
+                        vd["Oran"].append(f"{v.get('oran', 0)}%")
+                        vd["Tutar"].append(f"{v.get('tutar', 0):,.2f}")
+                st.dataframe(vd, hide_index=True, use_container_width=True)
 
-            if k["uyarilar"]:
-                uyari_text = "<br>".join([f"⚠️ {u}" for u in k["uyarilar"]])
-                st.markdown(f'<div class="evrim-uyari-kutusu">{uyari_text}</div>', unsafe_allow_html=True)
+            uyarilar = k.get("uyarilar", [])
+            if uyarilar:
+                ut = "<br>".join([f"⚠️ {u}" for u in uyarilar])
+                st.markdown(f'<div class="evrim-uyari-kutusu">{ut}</div>', unsafe_allow_html=True)
+
+
+def show_risk(checks, label=""):
+    sk = f"done_{label}"
+    if sk not in st.session_state:
+        pb = st.progress(0, text="Risk kontrolleri çalıştırılıyor...")
+        for i in range(len(checks)):
+            time.sleep(0.2)
+            pb.progress((i + 1) / len(checks), text=f"Kontrol {i+1}/{len(checks)}: {checks[i]['kategori']}...")
+        pb.empty()
+        st.session_state[sk] = True
+
+    kr = [c for c in checks if c["durum"] == "kritik"]
+    uy = [c for c in checks if c["durum"] == "uyari"]
+    ok = [c for c in checks if c["durum"] == "ok"]
+    t = len(checks)
+
+    score = max(0, min(100, round(100 - (len(ok) / t * 60) - (len(uy) / t * 20) + (len(kr) / t * 80)))) if t > 0 else 0
+
+    if len(kr) == 0 and len(uy) <= 1:
+        hat, hd = "Yeşil hat", {"y": 55, "m": 30, "s": 12, "k": 3}
+    elif len(kr) == 0:
+        hat, hd = "Mavi hat", {"y": 15, "m": 50, "s": 28, "k": 7}
+    elif len(kr) <= 1:
+        hat, hd = "Sarı hat", {"y": 10, "m": 25, "s": 45, "k": 20}
+    else:
+        hat, hd = "Kırmızı hat", {"y": 5, "m": 10, "s": 25, "k": 60}
+
+    st.markdown("##### Özet")
+    s1, s2, s3, s4, s5 = st.columns(5)
+    s1.metric("Risk skoru", f"{score}/100")
+    s2.metric("Hat tahmini", hat)
+    s3.metric("Kritik", len(kr))
+    s4.metric("Uyarı", len(uy))
+    s5.metric("Sorunsuz", len(ok))
 
     st.markdown("---")
+    st.markdown("##### Hat olasılık dağılımı")
+    h1, h2, h3, h4 = st.columns(4)
+    h1.progress(hd["y"], text=f"Yeşil %{hd['y']}")
+    h2.progress(hd["m"], text=f"Mavi %{hd['m']}")
+    h3.progress(hd["s"], text=f"Sarı %{hd['s']}")
+    h4.progress(hd["k"], text=f"Kırmızı %{hd['k']}")
 
-    if st.button("🚀 AI risk analizi çalıştır", type="primary", use_container_width=True):
-        st.session_state["run_analysis"] = True
-        st.switch_page_or_rerun = True
+    st.markdown("---")
+    st.markdown("##### Detaylı kontroller")
 
-# --- Tab 2: Risk Analizi ---
-with tab2:
+    if kr:
+        st.markdown(f"🔴 **Kritik** ({len(kr)})")
+        for c in kr:
+            with st.expander(f"❌ {c['baslik']}"):
+                st.markdown(c["aciklama"]); st.divider(); st.caption("💡 Detay"); st.markdown(c["detay"])
+    if uy:
+        st.markdown(f"🟡 **Uyarı** ({len(uy)})")
+        for c in uy:
+            with st.expander(f"⚠️ {c['baslik']}"):
+                st.markdown(c["aciklama"]); st.divider(); st.caption("💡 Detay"); st.markdown(c["detay"])
+    if ok:
+        st.markdown(f"🟢 **Sorunsuz** ({len(ok)})")
+        for c in ok:
+            with st.expander(f"✅ {c['baslik']}"):
+                st.markdown(c["aciklama"]); st.divider(); st.caption("💡 Detay"); st.markdown(c["detay"])
 
-    run = st.session_state.get("run_analysis", False)
-
-    if not run:
-        st.info("Henüz analiz yapılmadı. **Beyanname verisi** sekmesine gidip **AI risk analizi çalıştır** butonuna basın.")
+    st.markdown("---")
+    st.markdown("##### 📌 AI önerisi")
+    if kr:
+        kl = "\n".join([f"- **{c['baslik']}**" for c in kr])
+        ul = "\n".join([f"- {c['baslik']}" for c in uy]) if uy else ""
+        st.warning(f"**{len(kr)} kritik sorun çözülmeli:**\n\n{kl}\n\n{'**' + str(len(uy)) + ' uyarı takip edilmeli:**' if uy else ''}\n{ul}")
+    elif uy:
+        st.info(f"Kritik sorun yok. **{len(uy)} uyarı** gözden geçirilmeli.")
     else:
-        # Animated progress
-        if "analysis_done" not in st.session_state:
-            progress_bar = st.progress(0, text="Risk kontrolleri çalıştırılıyor...")
-            for i in range(len(RISK_CHECKS)):
-                time.sleep(0.25)
-                progress_bar.progress(
-                    (i + 1) / len(RISK_CHECKS),
-                    text=f"Kontrol {i+1}/{len(RISK_CHECKS)}: {RISK_CHECKS[i]['kategori']}..."
-                )
-            progress_bar.empty()
-            st.session_state["analysis_done"] = True
+        st.success("Tüm kontroller sorunsuz. Beyanname gönderilebilir. ✅")
 
-        # Score + Hat
-        st.markdown("##### Özet")
-        s1, s2, s3, s4, s5 = st.columns(5)
 
-        risk_score = 42
-        kritik = sum(1 for c in RISK_CHECKS if c["durum"] == "kritik")
-        uyari = sum(1 for c in RISK_CHECKS if c["durum"] == "uyari")
-        ok = sum(1 for c in RISK_CHECKS if c["durum"] == "ok")
+# =============================================
+# MAIN
+# =============================================
+st.markdown("### 🛃 Evrim AI — Pre-declaration risk scoring")
+st.caption("Beyanname gönderilmeden önce AI destekli risk analizi")
 
-        s1.metric("Risk skoru", f"{risk_score}/100")
-        s2.metric("Hat tahmini", "Sarı hat")
-        s3.metric("Kritik", kritik)
-        s4.metric("Uyarı", uyari)
-        s5.metric("Sorunsuz", ok)
+source = st.radio("Veri kaynağı:", ["📦 Demo verisi", "📤 Dosya yükle (Excel / CSV)"], horizontal=True)
 
-        st.markdown("---")
+if source == "📦 Demo verisi":
+    beyanname, kalemler, checks, is_demo = DEMO_BEYANNAME, DEMO_KALEMLER, DEMO_RISK_CHECKS, True
+else:
+    beyanname, kalemler, checks, is_demo = None, None, None, False
+    st.markdown("---")
+    st.caption("GTİP, tanım, menşe, miktar, fiyat, ağırlık sütunları içeren Excel veya CSV yükleyin")
 
-        # Hat distribution
-        st.markdown("##### Hat olasılık dağılımı")
-        hat_col1, hat_col2, hat_col3, hat_col4 = st.columns(4)
-        hat_col1.progress(10, text="Yeşil %10")
-        hat_col2.progress(25, text="Mavi %25")
-        hat_col3.progress(45, text="Sarı %45")
-        hat_col4.progress(20, text="Kırmızı %20")
+    uploaded = st.file_uploader("Dosya seçin", type=["xlsx", "xls", "csv"])
+    if uploaded:
+        beyanname, kalemler = parse_upload(uploaded)
+        if kalemler and len(kalemler) > 0:
+            st.success(f"✅ {len(kalemler)} kalem okundu.")
+        elif kalemler is not None:
+            st.warning("Kalem bulunamadı. GTİP sütunu olduğundan emin olun.")
 
-        st.markdown("---")
-
-        # Kontroller
-        st.markdown("##### Detaylı kontroller")
-
-        # Group by status
-        kritik_checks = [c for c in RISK_CHECKS if c["durum"] == "kritik"]
-        uyari_checks = [c for c in RISK_CHECKS if c["durum"] == "uyari"]
-        ok_checks = [c for c in RISK_CHECKS if c["durum"] == "ok"]
-
-        if kritik_checks:
-            st.markdown(f"🔴 **Kritik sorunlar** ({len(kritik_checks)})")
-            for check in kritik_checks:
-                with st.expander(f"❌ {check['baslik']}"):
-                    st.markdown(check["aciklama"])
-                    st.divider()
-                    st.caption("💡 Detaylı analiz")
-                    st.markdown(check["detay"])
-
-        if uyari_checks:
-            st.markdown(f"🟡 **Uyarılar** ({len(uyari_checks)})")
-            for check in uyari_checks:
-                with st.expander(f"⚠️ {check['baslik']}"):
-                    st.markdown(check["aciklama"])
-                    st.divider()
-                    st.caption("💡 Detaylı analiz")
-                    st.markdown(check["detay"])
-
-        if ok_checks:
-            st.markdown(f"🟢 **Sorunsuz** ({len(ok_checks)})")
-            for check in ok_checks:
-                with st.expander(f"✅ {check['baslik']}"):
-                    st.markdown(check["aciklama"])
-                    st.divider()
-                    st.caption("💡 Detaylı analiz")
-                    st.markdown(check["detay"])
-
-        st.markdown("---")
-
-        # Özet öneri
-        st.markdown("##### 📌 AI önerisi")
-        st.warning("""
-        **Beyanname gönderilmeden önce 2 kritik sorun çözülmeli:**
-
-        1. **Ticari tanım alanı düzeltilmeli** — 'İşghjkl' yerine anlamlı bir ürün tanımı girilmeli (ör: 'Plastik montaj klipsi'). Bu alan gümrük memurunun ilk kontrol noktasıdır.
-
-        2. **Ağırlık uyumsuzluğu giderilmeli** — Çeki listesi brüt ağırlığı (8.450 kg) ile beyanname toplamı (4.300 kg) arasında 4.150 kg fark var. Tüm kalemler girilip toplam doğrulanmalı.
-
-        **Ayrıca 4 uyarı takip edilmeli:** KKDF tasarruf fırsatı (2.399 TL), TAREKS referans numarası, TSE belgesi ve EMY oranı doğrulaması.
+    with st.expander("📋 Örnek Excel formatı"):
+        st.markdown("""
+| GTİP | Tanım | Ticari Tanım | Menşe | Miktar | Birim | Fiyat | İst. Kıymet | Brüt KG | Net KG |
+|------|-------|-------------|-------|--------|-------|-------|-------------|---------|--------|
+| 3926.90.97.90.29 | Plastik eşya | Montaj klipsi | İtalya | 50 | Adet | 900 | 1017 | 100 | 50 |
+| 8544.49.93.00.19 | PVC kablo | Bakır kablo 2.5mm | Çin | 15000 | Metre | 21000 | 23520 | 4200 | 3800 |
         """)
 
-        # Reset
-        if st.button("🔄 Yeniden analiz et"):
-            del st.session_state["analysis_done"]
-            del st.session_state["run_analysis"]
+if beyanname and kalemler and len(kalemler) > 0:
+    tab1, tab2 = st.tabs(["📋 Beyanname verisi", "🔍 Risk analizi"])
+
+    with tab1:
+        st.markdown("##### Dosya bilgileri")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Dosya", beyanname.get("dosya_no", "—"))
+        c2.metric("Kur tarihi", beyanname.get("kur_tarihi", "—"))
+        c3.metric("Döviz kuru", beyanname.get("doviz_kuru", "—"))
+        c4, c5, c6 = st.columns(3)
+        c4.metric("Rejim", beyanname.get("rejim", "—"))
+        c5.metric("Taşıma", beyanname.get("tasima", "—"))
+        c6.metric("Incoterms", beyanname.get("incoterms", "—"))
+        st.markdown("---")
+        st.markdown(f"##### Kalemler ({len(kalemler)})")
+        show_kalemler(kalemler)
+        st.markdown("---")
+        if st.button("🚀 AI risk analizi çalıştır", type="primary", use_container_width=True):
+            st.session_state["run"] = True
             st.rerun()
+
+    with tab2:
+        if not st.session_state.get("run"):
+            st.info("**Beyanname verisi** sekmesinden **AI risk analizi çalıştır** butonuna basın.")
+        else:
+            final_checks = checks if is_demo else generate_risk_checks(kalemler)
+            if final_checks:
+                show_risk(final_checks, label="main")
+            else:
+                st.warning("Risk kontrolü oluşturulamadı.")
+            if st.button("🔄 Yeniden analiz"):
+                for k in list(st.session_state.keys()):
+                    if k in ["run", "done_main"]:
+                        del st.session_state[k]
+                st.rerun()
