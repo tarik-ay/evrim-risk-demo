@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import random
+import json
 
 st.set_page_config(page_title="Evrim AI Risk Analizi", page_icon="🛃", layout="wide")
 
@@ -93,6 +94,176 @@ def generate_risk_checks(kalemler):
                 checks.append({"kategori": "Kıymet kontrolü", "baslik": f"Kalem {idx} — KKDF fırsatı", "aciklama": f"KKDF: **{v['tutar']:,.2f} TL**. Peşin ödemede sıfırlanabilir.", "detay": f"Potansiyel tasarruf: {v['tutar']:,.2f} TL.", "durum": "uyari"})
 
     return checks
+
+
+# =============================================
+# CLAUDE AI ANALYSIS
+# =============================================
+RISK_PROMPT = """Sen Türk gümrük mevzuatı konusunda uzman bir risk analiz AI'ısın.
+
+Aşağıdaki gümrük beyanname verilerini analiz et ve detaylı risk raporu oluştur.
+
+## BEYANNAME BİLGİLERİ:
+{beyanname_json}
+
+## KALEMLER:
+{kalemler_json}
+
+## YAPMAN GEREKEN KONTROLLER:
+
+1. **GTİP-Ticari Tanım Uyumu**: Her kalemin GTİP kodu ile ticari tanımı uyumlu mu? GTİP kodunun fasıl ve pozisyon açıklamasıyla karşılaştır. Ticari tanım boş veya anlamsız mı?
+
+2. **Kıymet Kontrolü**: Birim fiyat (fiyat/miktar) makul mü? Aşırı düşük veya yüksek kıymet beyanı var mı? Ürün tipine göre değerlendir.
+
+3. **Ağırlık Tutarlılığı**: Net ağırlık brütten büyük olamaz. Net/brüt oranı mantıklı mı? Ürün tipine göre ambalaj oranı normal mi?
+
+4. **Mevzuat Gereksinimleri**: Bu GTİP kodları için TAREKS denetimi, TSE uygunluk belgesi, CE belgesi, Ek Mali Yükümlülük (EMY), gözetim belgesi veya diğer ek belge gereksinimleri var mı?
+
+5. **KKDF Kontrolü**: Ödeme şekli peşin mi vadeli mi? KKDF uygulanıyor mu, peşin ödemede tasarruf fırsatı var mı?
+
+6. **Rejim Kontrolü**: Rejim kodu doğru mu? Rejime özgü ek gereksinimler var mı?
+
+7. **Genel Risk Değerlendirmesi**: Beyannamede kırmızı hat riski oluşturabilecek unsurlar var mı?
+
+## CEVAP FORMATI:
+Sadece JSON döndür, başka hiçbir şey yazma. Format:
+{{
+  "checks": [
+    {{
+      "kategori": "Kıymet kontrolü|GTİP doğrulama|Belge tutarlılığı|Mevzuat uyumu|Rejim kontrolü",
+      "baslik": "Kısa başlık",
+      "aciklama": "Markdown destekli açıklama. **Kalın** ile vurgula.",
+      "detay": "Detaylı analiz ve öneri",
+      "durum": "kritik|uyari|ok"
+    }}
+  ],
+  "risk_score": 0-100,
+  "hat_tahmini": "Yeşil hat|Mavi hat|Sarı hat|Kırmızı hat",
+  "hat_dagilimi": {{"yesil": 0-100, "mavi": 0-100, "sari": 0-100, "kirmizi": 0-100}},
+  "ozet_oneri": "Markdown formatında genel öneri metni"
+}}"""
+
+
+def ai_risk_analysis(beyanname, kalemler):
+    """Run Claude AI risk analysis on beyanname data."""
+    try:
+        import anthropic
+
+        api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            st.error("API key bulunamadı. Streamlit secrets'a ANTHROPIC_API_KEY ekleyin.")
+            return None
+
+        client = anthropic.Anthropic(api_key=api_key)
+
+        # Prepare kalem data — clean for JSON
+        kalemler_clean = []
+        for k in kalemler:
+            kalemler_clean.append({
+                "kalem_no": k.get("sno"),
+                "gtip": k.get("gtip"),
+                "tanim": k.get("tanim"),
+                "ticari_tanim": k.get("ticari_tanim"),
+                "mense": k.get("mense"),
+                "miktar": k.get("miktar"),
+                "birim": k.get("birim"),
+                "kalem_fiyati": k.get("kalem_fiyati"),
+                "ist_kiymet": k.get("ist_kiymet"),
+                "brut_kg": k.get("brut_kg"),
+                "net_kg": k.get("net_kg"),
+                "vergiler": k.get("vergiler", []),
+                "uyarilar": k.get("uyarilar", []),
+            })
+
+        prompt = RISK_PROMPT.format(
+            beyanname_json=json.dumps(beyanname, ensure_ascii=False, indent=2),
+            kalemler_json=json.dumps(kalemler_clean, ensure_ascii=False, indent=2),
+        )
+
+        with st.spinner("Claude analiz yapıyor..."):
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+        response_text = response.content[0].text.strip()
+
+        # Clean JSON — remove markdown fences if present
+        if response_text.startswith("```"):
+            response_text = response_text.split("\n", 1)[1]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
+        result = json.loads(response_text)
+        return result
+
+    except ImportError:
+        st.error("anthropic paketi yüklü değil. requirements.txt'e `anthropic` ekleyin.")
+        return None
+    except json.JSONDecodeError as e:
+        st.error(f"AI yanıtı parse edilemedi: {e}")
+        if response_text:
+            with st.expander("Ham AI yanıtı"):
+                st.code(response_text)
+        return None
+    except Exception as e:
+        st.error(f"AI analiz hatası: {e}")
+        return None
+
+
+def show_ai_risk(result):
+    """Display Claude AI analysis results."""
+    checks = result.get("checks", [])
+    score = result.get("risk_score", 50)
+    hat = result.get("hat_tahmini", "Sarı hat")
+    hd = result.get("hat_dagilimi", {"yesil": 25, "mavi": 25, "sari": 25, "kirmizi": 25})
+    oneri = result.get("ozet_oneri", "")
+
+    kr = [c for c in checks if c.get("durum") == "kritik"]
+    uy = [c for c in checks if c.get("durum") == "uyari"]
+    ok = [c for c in checks if c.get("durum") == "ok"]
+
+    st.markdown("##### Özet")
+    s1, s2, s3, s4, s5 = st.columns(5)
+    s1.metric("Risk skoru", f"{score}/100")
+    s2.metric("Hat tahmini", hat)
+    s3.metric("Kritik", len(kr))
+    s4.metric("Uyarı", len(uy))
+    s5.metric("Sorunsuz", len(ok))
+
+    st.markdown("---")
+    st.markdown("##### Hat olasılık dağılımı")
+    h1, h2, h3, h4 = st.columns(4)
+    h1.progress(min(hd.get("yesil", 0), 100), text=f"Yeşil %{hd.get('yesil', 0)}")
+    h2.progress(min(hd.get("mavi", 0), 100), text=f"Mavi %{hd.get('mavi', 0)}")
+    h3.progress(min(hd.get("sari", 0), 100), text=f"Sarı %{hd.get('sari', 0)}")
+    h4.progress(min(hd.get("kirmizi", 0), 100), text=f"Kırmızı %{hd.get('kirmizi', 0)}")
+
+    st.markdown("---")
+    st.markdown("##### Detaylı kontroller (AI)")
+
+    if kr:
+        st.markdown(f"🔴 **Kritik** ({len(kr)})")
+        for c in kr:
+            with st.expander(f"❌ {c.get('baslik', '')}"):
+                st.markdown(c.get("aciklama", "")); st.divider(); st.caption("🤖 AI detaylı analiz"); st.markdown(c.get("detay", ""))
+    if uy:
+        st.markdown(f"🟡 **Uyarı** ({len(uy)})")
+        for c in uy:
+            with st.expander(f"⚠️ {c.get('baslik', '')}"):
+                st.markdown(c.get("aciklama", "")); st.divider(); st.caption("🤖 AI detaylı analiz"); st.markdown(c.get("detay", ""))
+    if ok:
+        st.markdown(f"🟢 **Sorunsuz** ({len(ok)})")
+        for c in ok:
+            with st.expander(f"✅ {c.get('baslik', '')}"):
+                st.markdown(c.get("aciklama", "")); st.divider(); st.caption("🤖 AI detaylı analiz"); st.markdown(c.get("detay", ""))
+
+    if oneri:
+        st.markdown("---")
+        st.markdown("##### 🤖 AI önerisi")
+        st.info(oneri)
 
 
 # =============================================
@@ -512,7 +683,7 @@ else:
         """)
 
 if beyanname and kalemler and len(kalemler) > 0:
-    tab1, tab2 = st.tabs(["📋 Beyanname verisi", "🔍 Risk analizi"])
+    tab1, tab2, tab3 = st.tabs(["📋 Beyanname verisi", "🔍 Kural bazlı analiz", "🤖 AI analiz (Claude)"])
 
     with tab1:
         st.markdown("##### Dosya bilgileri")
@@ -528,21 +699,72 @@ if beyanname and kalemler and len(kalemler) > 0:
         st.markdown(f"##### Kalemler ({len(kalemler)})")
         show_kalemler(kalemler)
         st.markdown("---")
-        if st.button("🚀 AI risk analizi çalıştır", type="primary", use_container_width=True):
-            st.session_state["run"] = True
-            st.rerun()
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("🔍 Kural bazlı analiz", type="secondary", use_container_width=True):
+                st.session_state["run_rules"] = True
+                st.rerun()
+        with b2:
+            if st.button("🤖 AI analiz (Claude)", type="primary", use_container_width=True):
+                st.session_state["run_ai"] = True
+                st.rerun()
 
     with tab2:
-        if not st.session_state.get("run"):
-            st.info("**Beyanname verisi** sekmesinden **AI risk analizi çalıştır** butonuna basın.")
+        if not st.session_state.get("run_rules"):
+            st.info("**Beyanname verisi** sekmesinden **Kural bazlı analiz** butonuna basın.")
+            st.caption("Veri dışarı gönderilmez — tüm kontroller lokal çalışır.")
         else:
             final_checks = checks if is_demo else generate_risk_checks(kalemler)
             if final_checks:
-                show_risk(final_checks, label="main")
+                show_risk(final_checks, label="rules")
             else:
                 st.warning("Risk kontrolü oluşturulamadı.")
-            if st.button("🔄 Yeniden analiz"):
+            if st.button("🔄 Yeniden analiz", key="reset_rules"):
                 for k in list(st.session_state.keys()):
-                    if k in ["run", "done_main"]:
+                    if k in ["run_rules", "done_rules"]:
                         del st.session_state[k]
                 st.rerun()
+
+    with tab3:
+        if not st.session_state.get("run_ai"):
+            st.info("**Beyanname verisi** sekmesinden **AI analiz** butonuna basın.")
+            st.caption("Claude API ile derin analiz — beyanname verisi Anthropic API'ye gönderilir.")
+        else:
+            # Data governance consent
+            if "ai_consent" not in st.session_state:
+                st.warning("""
+                **⚠️ Veri paylaşım onayı gerekli**
+
+                AI analizi için beyanname verileri (GTİP, menşe, kıymet, ticari tanım, vergiler) Anthropic Claude API'ye gönderilecektir.
+
+                - Veriler analiz dışında saklanmaz
+                - Firma vergi numarası veya kişisel bilgi gönderilmez
+                - Sadece kalem bazlı ticari veriler paylaşılır
+                """)
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ Onaylıyorum, analizi başlat", type="primary", use_container_width=True):
+                        st.session_state["ai_consent"] = True
+                        st.rerun()
+                with col_no:
+                    if st.button("❌ İptal", use_container_width=True):
+                        st.session_state["run_ai"] = False
+                        st.rerun()
+            else:
+                # Run AI analysis
+                if "ai_result" not in st.session_state:
+                    result = ai_risk_analysis(beyanname, kalemler)
+                    if result:
+                        st.session_state["ai_result"] = result
+                    else:
+                        st.error("AI analizi başarısız oldu.")
+
+                if "ai_result" in st.session_state:
+                    show_ai_risk(st.session_state["ai_result"])
+
+                if st.button("🔄 Yeniden AI analiz", key="reset_ai"):
+                    for k in list(st.session_state.keys()):
+                        if k in ["run_ai", "ai_consent", "ai_result"]:
+                            del st.session_state[k]
+                    st.rerun()
+
